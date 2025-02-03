@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 const mongoose = require("mongoose");
 const { OpenAI } = require("openai");
+const path = require('path');
 
 const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -16,7 +17,12 @@ mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopol
     .catch(err => console.error("Erro ao conectar ao MongoDB", err));
 
 // Webhook de verificação do Instagram
-app.get("/webhook-insta-verify", (req, res) => {
+app.get("/privacidade", (req, res) => {
+    return res.sendFile(path.join(__dirname,'privacidade.html'));
+});
+
+// Webhook de verificação do Instagram
+app.get("/webhook", (req, res) => {
     if (req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
         res.send(req.query["hub.challenge"]);
     } else {
@@ -25,13 +31,12 @@ app.get("/webhook-insta-verify", (req, res) => {
 });
 
 // Endpoint para receber mensagens do Instagram
-app.post("/webhook-insta-message", async (req, res) => {
+app.post("/webhook", async (req, res) => {
     const body = req.body;
-
     if (body.object === "instagram") {
         body.entry.forEach(async (entry) => {
             const messaging = entry.messaging[0];
-            if (messaging && messaging.message) {
+            if (messaging && messaging.message && !messaging.message.is_echo) {
                 const senderId = messaging.sender.id;
                 const messageText = messaging.message.text;
 
@@ -67,13 +72,14 @@ async function processMessage(text) {
 // Função para enviar mensagens via Messenger API
 async function sendMessage(recipientId, text) {
     try {
-        await axios.post(
+        const IGResponse = await axios.post(
             `https://graph.facebook.com/v19.0/me/messages?access_token=${process.env.PAGE_ACCESS_TOKEN}`,
             {
                 recipient: { id: recipientId },
                 message: { text }
             }
         );
+        console.log('Instagram response', IGResponse);
     } catch (error) {
         console.error("Erro ao enviar mensagem:", error.response ? error.response.data : error.message);
     }
