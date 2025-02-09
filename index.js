@@ -5,6 +5,7 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 const { OpenAI } = require("openai");
 const path = require('path');
+const enums = require('./enums');
 
 const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -40,11 +41,35 @@ app.post("/webhook", async (req, res) => {
                 const senderId = messaging.sender.id;
                 const messageText = messaging.message.text;
 
-                // Processar a mensagem
-                const reply = await processMessage(messageText);
+                // insere mensagem no banco
+                await mongoose.connection.db.collection('messages').insertOne({
+                    senderId: senderId,
+                    message: messageText,
+                    timestamp: new Date(),
+                    ttl: new Date(Date.now() + 60 * 1000) // 60 segundos
+                });
 
-                // Enviar resposta
-                await sendMessage(senderId, reply);
+                // procura table lock
+                const tableLockResponse = await mongoose.connection.db.collection(enums.TABLE_LOCK_COLLECTION_NAME).findOne({
+                    senderId: senderId
+                });
+
+                if (!tableLockResponse) {
+                    // insere table lock para acumular mensagens enquanto existir esse documento
+                    await mongoose.connection.db.collection(enums.TABLE_LOCK_COLLECTION_NAME).insertOne({
+                        senderId: senderId,
+                        timestamp: new Date(),
+                        ttl: new Date(Date.now() + enums.TABLE_LOCK_TTL_IN_MS)
+                    });
+
+                    setTimeout(async () => {
+                        const joinedMessages = await processBatchOfMessages(senderId);
+                        const answer = await processMessageWithGPT(joinedMessages);
+                        await sendMessage(senderId, answer);
+                    }, enums.TABLE_LOCK_TTL_IN_MS)
+                } else {
+                    console.log(`Message from user ${senderId} saved but process finished waiting more messages: ${messageText}`)
+                }
             }
         });
 
@@ -54,8 +79,18 @@ app.post("/webhook", async (req, res) => {
     }
 });
 
+const processBatchOfMessages = async (senderId) => {
+    const messages = await mongoose.connection.db.collection('messages').find({
+        senderId: senderId
+    }).toArray();
+
+    const joinedMessages = messages.map(message => message.message).join('\n');
+
+    return joinedMessages;
+}
+
 // Função para processar mensagens usando OpenAI API
-async function processMessage(text) {
+async function processMessageWithGPT(text) {
     try {
         const response = await openai.chat.completions.create({
             model: "gpt-4",
