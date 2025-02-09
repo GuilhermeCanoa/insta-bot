@@ -7,15 +7,16 @@ const { OpenAI } = require("openai");
 const path = require('path');
 const enums = require('./enums');
 
+const {messagesRepository, messagesLockTableRepository, messagesHistoryRepository} = require('./v1/repository');
+
 const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.use(bodyParser.json());
 
-// Conectar ao MongoDB
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("MongoDB conectado"))
-    .catch(err => console.error("Erro ao conectar ao MongoDB", err));
+messagesRepository.connect();
+messagesLockTableRepository.connect();
+messagesHistoryRepository.connect();
 
 // Webhook de verificação do Instagram
 app.get("/privacidade", (req, res) => {
@@ -42,21 +43,28 @@ app.post("/webhook", async (req, res) => {
                 const messageText = messaging.message.text;
 
                 // insere mensagem no banco
-                await mongoose.connection.db.collection('messages').insertOne({
+                await messagesRepository.insertOne({
                     senderId: senderId,
                     message: messageText,
                     timestamp: new Date(),
                     ttl: new Date(Date.now() + 60 * 1000) // 60 segundos
                 });
+                
+                // insere mensagem no banco de historico
+                await messagesHistoryRepository.insertOne({
+                    senderId: senderId,
+                    message: messageText,
+                    timestamp: new Date(),
+                });
 
                 // procura table lock
-                const tableLockResponse = await mongoose.connection.db.collection(enums.TABLE_LOCK_COLLECTION_NAME).findOne({
+                const tableLockResponse = await messagesLockTableRepository.findOne({
                     senderId: senderId
                 });
 
                 if (!tableLockResponse) {
                     // insere table lock para acumular mensagens enquanto existir esse documento
-                    await mongoose.connection.db.collection(enums.TABLE_LOCK_COLLECTION_NAME).insertOne({
+                    await messagesLockTableRepository.insertOne({
                         senderId: senderId,
                         timestamp: new Date(),
                         ttl: new Date(Date.now() + enums.TABLE_LOCK_TTL_IN_MS)
@@ -93,7 +101,7 @@ const processBatchOfMessages = async (senderId) => {
 async function processMessageWithGPT(text) {
     try {
         const response = await openai.chat.completions.create({
-            model: "gpt-4",
+            model: "gpt-4o-mini",
             messages: [{ role: "user", content: text }]
         });
 
