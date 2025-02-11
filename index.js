@@ -1,13 +1,7 @@
-require('dotenv').config()
-const express = require('express')
-const bodyParser = require('body-parser')
-
+const app = require('./server');
 const services = require('./v1/services')
 const path = require('path')
 const enums = require('./enums')
-
-const app = express()
-app.use(bodyParser.json())
 
 const { openAIService, metaAPIService } = services
 const { messagesRepository, messagesLockTableRepository, messagesHistoryRepository } = require('./v1/repository')
@@ -73,6 +67,7 @@ app.post('/webhook', async (req, res) => {
             const answer = await openAIService.processAndAnswerMessage(joinedMessages)
             await metaAPIService.sendMessage(senderId, answer)
           }, enums.TABLE_LOCK_TTL_IN_MS)
+          console.log(`Message from user ${senderId} saved and process started waiting more messages: ${messageText}`)
         } else {
           console.log(`Message from user ${senderId} saved but process finished waiting more messages: ${messageText}`)
         }
