@@ -28,8 +28,19 @@ class mongooseClass {
     try {
       const result = await mongoose.connection.db.collection(this.collectionName).findOne(query);
       console.log('Found document:', result);
+      return result;
     } catch (err) {
       console.error('Error finding document:', err);
+    }
+  };
+
+  findMany = async (query) => {
+    try {
+      const result = await mongoose.connection.db.collection(this.collectionName).find(query).toArray();
+      console.log('Found documents:', result);
+      return result;
+    } catch (err) {
+      console.error('Error finding documents:', err);
     }
   };
   

@@ -1,7 +1,7 @@
 const mongooseClass = require('./mongoose');
 
 const messagesRepository = new mongooseClass('messages', process.env.MONGO_URI);
-const messagesLockTableRepository = new mongooseClass('messages_lock_table', process.env.MONGO_URI);
+const messagesLockTableRepository = new mongooseClass('messages_table_lock', process.env.MONGO_URI);
 const messagesHistoryRepository = new mongooseClass('messages_history', process.env.MONGO_URI);
 
 // const messagesRepositoryConnection = await repository.messagesRepository.connect();

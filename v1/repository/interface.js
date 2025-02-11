@@ -1,3 +1,5 @@
+// https://geedew.com/basic-interfaces-in-nodejs/
+
 class IRepository {
     constructor() {
         if (this.constructor === IRepository) {

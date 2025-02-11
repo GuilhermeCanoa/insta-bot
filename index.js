@@ -1,18 +1,17 @@
 require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
-const axios = require("axios");
-const mongoose = require("mongoose");
-const { OpenAI } = require("openai");
+
+const services = require('./v1/services');
 const path = require('path');
 const enums = require('./enums');
 
-const {messagesRepository, messagesLockTableRepository, messagesHistoryRepository} = require('./v1/repository');
-
 const app = express();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 app.use(bodyParser.json());
+
+
+const { openAIService, metaAPIService } = services;
+const { messagesRepository, messagesLockTableRepository, messagesHistoryRepository } = require('./v1/repository');
 
 messagesRepository.connect();
 messagesLockTableRepository.connect();
@@ -72,8 +71,8 @@ app.post("/webhook", async (req, res) => {
 
                     setTimeout(async () => {
                         const joinedMessages = await processBatchOfMessages(senderId);
-                        const answer = await processMessageWithGPT(joinedMessages);
-                        await sendMessage(senderId, answer);
+                        const answer = await openAIService.processAndAnswerMessage(joinedMessages);
+                        await metaAPIService.sendMessage(senderId, answer);
                     }, enums.TABLE_LOCK_TTL_IN_MS)
                 } else {
                     console.log(`Message from user ${senderId} saved but process finished waiting more messages: ${messageText}`)
@@ -88,45 +87,16 @@ app.post("/webhook", async (req, res) => {
 });
 
 const processBatchOfMessages = async (senderId) => {
-    const messages = await mongoose.connection.db.collection('messages').find({
+    const messages = await messagesRepository.findMany({
         senderId: senderId
-    }).toArray();
+    });
 
     const joinedMessages = messages.map(message => message.message).join('\n');
 
     return joinedMessages;
 }
 
-// Função para processar mensagens usando OpenAI API
-async function processMessageWithGPT(text) {
-    try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: text }]
-        });
-
-        return response.choices[0].message.content;
-    } catch (error) {
-        console.error("Erro na OpenAI API:", error);
-        return "Desculpe, não entendi. Pode reformular?";
-    }
-}
-
-// Função para enviar mensagens via Messenger API
-async function sendMessage(recipientId, text) {
-    try {
-        const IGResponse = await axios.post(
-            `https://graph.facebook.com/v19.0/me/messages?access_token=${process.env.PAGE_ACCESS_TOKEN}`,
-            {
-                recipient: { id: recipientId },
-                message: { text }
-            }
-        );
-        console.log('Instagram response', IGResponse);
-    } catch (error) {
-        console.error("Erro ao enviar mensagem:", error.response ? error.response.data : error.message);
-    }
-}
+// TODO qlqr erro precisa deletar o table-lock
 
 // Iniciar servidor
 const PORT = process.env.PORT || 3000;
